@@ -99,7 +99,7 @@ class MADDPG(object):
         if self.alg_types[agent_i] == 'MADDPG':
             if self.discrete_action: # one-hot encode action
                 all_trgt_acs = [onehot_from_logits(pi(nobs)) for pi, nobs in
-                                zip(self.target_policies, next_obs)]
+                                zip(self.target_policies, next_obs)] # a'=mu'(o') Have all agents'
             else:
                 all_trgt_acs = [pi(nobs) for pi, nobs in zip(self.target_policies,
                                                              next_obs)]
@@ -107,22 +107,20 @@ class MADDPG(object):
         else:  # DDPG
             if self.discrete_action:
                 trgt_vf_in = torch.cat((next_obs[agent_i],
-                                        onehot_from_logits(
-                                            curr_agent.target_policy(
-                                                next_obs[agent_i]))),
-                                       dim=1)
-            else:
+                                        onehot_from_logits(curr_agent.target_policy(
+                                                next_obs[agent_i]))),dim=1)
+            else:                   # a'=mu(o') only have current agent's
                 trgt_vf_in = torch.cat((next_obs[agent_i],
-                                        curr_agent.target_policy(next_obs[agent_i])),
-                                       dim=1)
+                                        curr_agent.target_policy(next_obs[agent_i])),dim=1)
         target_value = (rews[agent_i].view(-1, 1) + self.gamma *
                         curr_agent.target_critic(trgt_vf_in) *
-                        (1 - dones[agent_i].view(-1, 1)))
+                        (1 - dones[agent_i].view(-1, 1)))   #y^j
 
         if self.alg_types[agent_i] == 'MADDPG':
             vf_in = torch.cat((*obs, *acs), dim=1)
         else:  # DDPG
             vf_in = torch.cat((obs[agent_i], acs[agent_i]), dim=1)
+            
         actual_value = curr_agent.critic(vf_in)
         vf_loss = MSELoss(actual_value, target_value.detach())
         vf_loss.backward()
@@ -131,8 +129,8 @@ class MADDPG(object):
         torch.nn.utils.clip_grad_norm(curr_agent.critic.parameters(), 0.5)
         curr_agent.critic_optimizer.step()
 
+        # ============== Here for policy network training =====================
         curr_agent.policy_optimizer.zero_grad()
-
         if self.discrete_action:
             # Forward pass as if onehot (hard=True) but backprop through a differentiable
             # Gumbel-Softmax sample. The MADDPG paper uses the Gumbel-Softmax trick to backprop
@@ -146,7 +144,8 @@ class MADDPG(object):
             curr_pol_vf_in = curr_pol_out
         if self.alg_types[agent_i] == 'MADDPG':
             all_pol_acs = []
-            for i, pi, ob in zip(range(self.nagents), self.policies, obs):
+            for i, pi, ob in zip(range(self.nagents), self.policies, obs): 
+                # Is it correct to train mu using all others' policies???
                 if i == agent_i:
                     all_pol_acs.append(curr_pol_vf_in)
                 elif self.discrete_action:
@@ -162,7 +161,7 @@ class MADDPG(object):
         pol_loss.backward()
         if parallel:
             average_gradients(curr_agent.policy)
-        torch.nn.utils.clip_grad_norm(curr_agent.policy.parameters(), 0.5)
+        torch.nn.utils.clip_grad_norm(curr_agent.policy.parameters(), 0.5) # Constraints on the grad.
         curr_agent.policy_optimizer.step()
         if logger is not None:
             logger.add_scalars('agent%i/losses' % agent_i,
@@ -181,8 +180,12 @@ class MADDPG(object):
         self.niter += 1
 
     def prep_training(self, device='gpu'):
+        '''
+            This function used to prepare for training (mainly make sure the 
+            device applied is correct)?
+        '''
         for a in self.agents:
-            a.policy.train()
+            a.policy.train()        
             a.critic.train()
             a.target_policy.train()
             a.target_critic.train()
