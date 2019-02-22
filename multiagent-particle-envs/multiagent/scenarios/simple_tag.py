@@ -32,7 +32,7 @@ class Scenario(BaseScenario):
             landmark.size = 0.2
             landmark.boundary = False
         #==================Adding borders==================
-        
+        '''
         num_borders = 80 # (20 * 4)
         world.borders = [Border() for i in range(num_borders)]
         for i, border in enumerate(world.borders):
@@ -42,7 +42,7 @@ class Scenario(BaseScenario):
             border.size = 0.2
             border.boundary = False
             border.shape = [[-0.1, -0.1], [0.1, -0.1], [0.1, 0.1], [-0.1, 0.1]]     
-        
+        '''
         #==================End of Adding borders============
         # make initial conditions
         self.reset_world(world)
@@ -68,7 +68,7 @@ class Scenario(BaseScenario):
                 landmark.state.p_vel = np.zeros(world.dim_p)
         
         #==================Adding borders==================
-        
+        '''
         for i, border in enumerate(world.borders):
             border.color = np.array([0.25, 0.25, 0.25])        
         pos = []
@@ -99,7 +99,7 @@ class Scenario(BaseScenario):
         for i, border in enumerate(world.borders):
             border.state.p_pos = np.asarray(pos[i])
             border.state.p_vel = np.zeros(world.dim_p)            
-        
+        '''
         #==================End of Adding borders============
 
     def benchmark_data(self, agent, world):
@@ -137,7 +137,7 @@ class Scenario(BaseScenario):
     def agent_reward(self, agent, world):
         # Agents are negatively rewarded if caught by adversaries
         rew = 0
-        shape = False
+        shape = True
         adversaries = self.adversaries(world)
         if shape:  # reward can optionally be shaped (increased reward for increased distance from adversary)
             for adv in adversaries:

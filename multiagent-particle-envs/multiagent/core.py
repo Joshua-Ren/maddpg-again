@@ -139,9 +139,9 @@ class World(object):
     # return all entities in the world
     @property
     def entities(self):
-        #return self.agents + self.landmarks
+        return self.agents + self.landmarks
         #==================Adding borders==================
-        return self.agents + self.landmarks + self.borders
+        #return self.agents + self.landmarks + self.borders
         #=============End of Adding borders================  
 
     # return all agents controllable by external policies
