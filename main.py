@@ -54,16 +54,19 @@ def run(config):
                                   adversary_alg=config.adversary_alg,
                                   tau=config.tau,
                                   lr=config.lr,
-                                  hidden_dim=config.hidden_dim)
+                                  hidden_dim=config.hidden_dim,
+                                  noisy_sharing = True,
+                                  noisy_SNR = config.noisy_SNR)
     replay_buffer = ReplayBuffer(config.buffer_length, maddpg.nagents,
                                  [obsp.shape[0] for obsp in env.observation_space],
                                  [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
                                   for acsp in env.action_space])
     t = 0
+    print('#########################################################################')
+    print('Adversary using: ', config.adversary_alg, 'Good agent using: ',config.agent_alg,'\n')
+    print('Noisy SNR is: ', config.noisy_SNR)
+    print('#########################################################################')    
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
-        print("Episodes %i-%i of %i" % (ep_i + 1,
-                                        ep_i + 1 + config.n_rollout_threads,
-                                        config.n_episodes))
         obs = env.reset()
         # obs.shape = (n_rollout_threads, nagent)(nobs), nobs differs per agent so not tensor
         maddpg.prep_rollouts(device='cpu')
@@ -106,6 +109,11 @@ def run(config):
             logger.add_scalar('agent%i/mean_episode_rewards' % a_i, a_ep_rew, ep_i)
 
         if ep_i % config.save_interval < config.n_rollout_threads:
+            print("Episodes %i-%i of %i, rewards are: \n" % (ep_i + 1,
+                                        ep_i + 1 + config.n_rollout_threads,
+                                        config.n_episodes))
+            for a_i, a_ep_rew in enumerate(ep_rews):
+                print('agent%i/mean_episode_rewards' % a_i, a_ep_rew, ep_i)
             os.makedirs(run_dir / 'incremental', exist_ok=True)
             maddpg.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
             maddpg.save(run_dir / 'model.pt')
@@ -149,6 +157,7 @@ if __name__ == '__main__':
                         choices=['MADDPG', 'DDPG'])
     parser.add_argument("--discrete_action",
                         action='store_true')
+    parser.add_argument("--noisy_SNR", default = 50, type=float)
 
     config = parser.parse_args()
 
