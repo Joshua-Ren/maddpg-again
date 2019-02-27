@@ -27,7 +27,8 @@ import multiagent.scenarios as scenarios
 
 
 USE_CUDA = False
-env_id = 'simple_tag'
+env_id = 'simple_speaker_listener'
+#env_id = 'simple_tag'
 buffer_length = int(1e6)
 n_episodes = int(25000)
 n_exploration_eps = int(25000)
@@ -35,7 +36,7 @@ n_rollout_threads = 1
 final_noise_scale = 0.0
 init_noise_scale = 0.3      # The exploration noise will gradually decreased
 episode_length = 25
-batch_size = 1024
+batch_size = 64
 steps_per_update = 100
 save_interval = 1000
 
@@ -72,7 +73,7 @@ torch.manual_seed(1024)
 np.random.seed(1024)
 
 env = make_parallel_env(env_id, n_rollout_threads, 1024, True)
-maddpg = MADDPG.init_from_env(env, agent_alg='MADDPG', adversary_alg='DDPG', 
+maddpg = MADDPG.init_from_env(env, agent_alg='MADDPG', adversary_alg='MADDPG', 
                               tau=0.01, lr=0.01, hidden_dim=64)
 
 replay_buffer = ReplayBuffer(buffer_length, maddpg.nagents,
@@ -82,7 +83,7 @@ replay_buffer = ReplayBuffer(buffer_length, maddpg.nagents,
 
 t = 0
 #for ep_i in range(0, n_episodes, n_rollout_threads):
-for ep_i in range(0, 1, 1):
+for ep_i in range(0, 10, 1):
     #print("Episodes %i-%i of %i" % (ep_i + 1, ep_i + 1 + n_rollout_threads, n_episodes))
     obs = env.reset()
     maddpg.prep_rollouts(device='cpu')
@@ -102,6 +103,16 @@ for ep_i in range(0, 1, 1):
         # rearrange actions to be per environment
         actions = [[ac[i] for ac in agent_actions] for i in range(n_rollout_threads)]
         next_obs, rewards, dones, infos = env.step(actions)
+        
+        
+        noisy_agent_actions = []
+        for i in range(len(agent_actions)):
+            noise = np.random.rand(agent_actions[i].shape[0],agent_actions[i].shape[1])
+            tmp = agent_actions[i]*0
+            tmp_action = np.argmax(agent_actions[i]+noise*5)
+            tmp[0][tmp_action] = 1.0
+            noisy_agent_actions.append(tmp)
+        
         replay_buffer.push(obs, agent_actions, rewards, next_obs, dones) # Here pushing observations
         obs = next_obs
         t += n_rollout_threads
@@ -122,16 +133,7 @@ for ep_i in range(0, 1, 1):
     for a_i, a_ep_rew in enumerate(ep_rews): 
         logger.add_scalar('agent%i/mean_episode_rewards' % a_i, a_ep_rew, ep_i)
     
-    if ep_i % save_interval < n_rollout_threads:
-            os.makedirs(run_dir / 'incremental', exist_ok=True)
-            maddpg.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
-            maddpg.save(run_dir / 'model.pt')
 
-# Save the last model, there is no overfitting in RL? 
-maddpg.save(run_dir / 'model.pt')
-env.close()
-logger.export_scalars_to_json(str(log_dir / 'summary.json'))
-logger.close()
 
 
 

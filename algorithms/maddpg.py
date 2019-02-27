@@ -4,6 +4,7 @@ from gym.spaces import Box, Discrete
 from utils.networks import MLPNetwork
 from utils.misc import soft_update, average_gradients, onehot_from_logits, gumbel_softmax
 from utils.agents import DDPGAgent
+import numpy as np
 
 MSELoss = torch.nn.MSELoss()
 
@@ -13,7 +14,7 @@ class MADDPG(object):
     """
     def __init__(self, agent_init_params, alg_types,
                  gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64,
-                 discrete_action=False):
+                 discrete_action=False,noisy_sharing = True,noisy_SNR = 50):
         """
         Inputs:
             agent_init_params (list of dict): List of dicts with parameters to
@@ -45,7 +46,10 @@ class MADDPG(object):
         self.trgt_pol_dev = 'cpu'  # device for target policies
         self.trgt_critic_dev = 'cpu'  # device for target critics
         self.niter = 0
-
+        # ==========================Adding noise====================
+        self.noisy_sharing = noisy_sharing
+        self.noisy_SNR = noisy_SNR    # In dB
+        # ====================End of Adding noise====================
     @property
     def policies(self):
         return [a.policy for a in self.agents]
@@ -76,9 +80,30 @@ class MADDPG(object):
         Outputs:
             actions: List of actions for each agent
         """
-        return [a.step(obs, explore=explore) for a, obs in zip(self.agents,
-                                                                 observations)]
+        return [a.step(obs, explore=explore) for a, obs in zip(self.agents, observations)]
 
+    
+    def noisy_sharing_discrete(self, actions, self_ind):
+        '''
+            Input: actions, list[[batch_size, action space],...]
+                   self_ind, scalar, the action of itself do not add noise
+                   self.noisy_SNR
+            Output: noisy_actions
+        '''
+        noisy_actions = []
+        for a_id in range(self.nagents):
+            if a_id == self_ind:        # Noise is only added on other's actions               
+                noisy_actions.append(actions[a_id])
+            else:
+                P_noise = 1/(10**(0.05*self.noisy_SNR))
+                noise = torch.normal(mean=0.,std=P_noise*torch.ones(actions[a_id].shape))
+                tmp_noisy_actions = actions[a_id].data
+                tmp_noisy_actions += noise
+                arg_ = torch.argmax(tmp_noisy_actions,dim=1,keepdim=True)
+                one_hot = torch.zeros(len(arg_),actions[a_id].shape[1]).scatter_(dim=1,index=arg_,value=1)
+                noisy_actions.append(one_hot)
+        return noisy_actions
+    
     def update(self, sample, agent_i, parallel=False, logger=None):
         """
         Update parameters of agent model based on sample from replay buffer
@@ -94,15 +119,20 @@ class MADDPG(object):
         """
         obs, acs, rews, next_obs, dones = sample
         curr_agent = self.agents[agent_i]
-
+        
         curr_agent.critic_optimizer.zero_grad()
         if self.alg_types[agent_i] == 'MADDPG':
             if self.discrete_action: # one-hot encode action
                 all_trgt_acs = [onehot_from_logits(pi(nobs)) for pi, nobs in
                                 zip(self.target_policies, next_obs)] # a'=mu'(o') Have all agents'
             else:
-                all_trgt_acs = [pi(nobs) for pi, nobs in zip(self.target_policies,
-                                                             next_obs)]
+                all_trgt_acs = [pi(nobs) for pi, nobs in zip(self.target_policies, next_obs)]
+            
+            # ==========================Adding noise====================
+            if self.noisy_sharing == True:
+                noisy_all_trgt_acs = self.noisy_sharing_discrete(all_trgt_acs,agent_i)
+                all_trgt_acs = noisy_all_trgt_acs   
+            # ==================End of Adding noise====================
             trgt_vf_in = torch.cat((*next_obs, *all_trgt_acs), dim=1)
         else:  # DDPG
             if self.discrete_action:
@@ -234,7 +264,7 @@ class MADDPG(object):
 
     @classmethod
     def init_from_env(cls, env, agent_alg="MADDPG", adversary_alg="MADDPG",
-                      gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64):
+                      gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64, noisy_sharing = True,noisy_SNR = 50):
         """
         Instantiate instance of this class from multi-agent environment
         """
@@ -266,7 +296,8 @@ class MADDPG(object):
                      'hidden_dim': hidden_dim,
                      'alg_types': alg_types,
                      'agent_init_params': agent_init_params,
-                     'discrete_action': discrete_action}
+                     'discrete_action': discrete_action,
+                     'noisy_SNR':noisy_SNR}
         instance = cls(**init_dict)
         instance.init_dict = init_dict
         return instance
