@@ -17,7 +17,7 @@ USE_CUDA = False  # torch.cuda.is_available()
 def make_parallel_env(env_id, n_rollout_threads, seed, discrete_action):
     def get_env_fn(rank):
         def init_env():
-            env = make_env(env_id, discrete_action=discrete_action)
+            env = make_env(env_id, discrete_action=discrete_action, benchmark=True)
             env.seed(seed + rank * 1000)
             np.random.seed(seed + rank * 1000)
             return env
