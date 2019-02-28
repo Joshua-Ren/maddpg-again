@@ -84,6 +84,7 @@ def run(config):
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
             next_obs, rewards, dones, infos = env.step(actions)
+            # print(infos[0])
             replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
             obs = next_obs
             t += config.n_rollout_threads
@@ -98,8 +99,8 @@ def run(config):
                         sample = replay_buffer.sample(config.batch_size, to_gpu=USE_CUDA)
                         maddpg.update(sample, a_i, logger=logger)
                     maddpg.update_all_targets()
-                    
                 maddpg.prep_rollouts(device='cpu')
+
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
         for a_i, a_ep_rew in enumerate(ep_rews):
@@ -109,6 +110,63 @@ def run(config):
             os.makedirs(run_dir / 'incremental', exist_ok=True)
             maddpg.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
             maddpg.save(run_dir / 'model.pt')
+
+        # *** perform validation every 1000 episodes. i.e. run N=10 times without exploration ***
+        if ep_i != 0 and ep_i % config.validate_every_n_eps == 0:
+            print('*'*10,'Validation BEGINS','*'*10)
+            for valid_et_i in range(config.run_n_eps_in_validation):
+                obs = env.reset()
+                maddpg.prep_rollouts(device='cpu')
+                explr_pct_remaining = max(0, config.n_exploration_eps - ep_i) / config.n_exploration_eps
+                maddpg.scale_noise(config.final_noise_scale + (config.init_noise_scale - config.final_noise_scale) * explr_pct_remaining)
+                maddpg.reset_noise()
+
+                # 假设只有一个env在跑
+                info_for_one_env_among_timesteps = []
+
+                for et_i in range(config.episode_length):
+                    # rearrange observations to be per agent, and convert to torch Variable
+                    torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
+                                          requires_grad=False)
+                                 for i in range(maddpg.nagents)]
+                    # get actions as torch Variables
+                    torch_agent_actions = maddpg.step(torch_obs, explore=False)
+                    # convert actions to numpy arrays
+                    agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
+                    # rearrange actions to be per environment
+                    actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
+                    next_obs, rewards, dones, infos = env.step(actions)
+                    info_for_one_env_among_timesteps.append(infos[0]['n'])
+                    # replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
+                    obs = next_obs
+                    # t += config.n_rollout_threads
+                    # if (len(replay_buffer) >= config.batch_size and
+                    #         (t % config.steps_per_update) < config.n_rollout_threads):
+                    #     if USE_CUDA:
+                    #         maddpg.prep_training(device='gpu')
+                    #     else:
+                    #         maddpg.prep_training(device='cpu')
+                    #     for u_i in range(config.n_rollout_threads):
+                    #         for a_i in range(maddpg.nagents):
+                    #             sample = replay_buffer.sample(config.batch_size, to_gpu=USE_CUDA)
+                    #             maddpg.update(sample, a_i, logger=logger)
+                    #         maddpg.update_all_targets()
+                    #     maddpg.prep_rollouts(device='cpu')
+                # ep_rews = replay_buffer.get_average_rewards(
+                #     config.episode_length * config.n_rollout_threads)
+                # for a_i, a_ep_rew in enumerate(ep_rews):
+                #     logger.add_scalar('agent%i/mean_episode_rewards' % a_i, a_ep_rew, ep_i)
+            print('Summary statistics:')
+            if config.env_id == 'simple_tag':
+                avg_collisions = sum(map(sum,info_for_one_env_among_timesteps))/config.run_n_eps_in_validation
+                print(f'Avg of collisions: {avg_collisions}')
+            elif config.env_id == 'simple_speaker_listener':
+                for i, stat in enumerate(info_for_one_env_among_timesteps):
+                    print(f'ep {i}: {stat}')
+            else:
+                raise NotImplementedError
+            print('*' * 10, 'Validation ENDS', '*' * 10)
+        # *** END of VALIDATION ***
 
     maddpg.save(run_dir / 'model.pt')
     env.close()
@@ -149,7 +207,10 @@ if __name__ == '__main__':
                         choices=['MADDPG', 'DDPG'])
     parser.add_argument("--discrete_action",
                         action='store_true')
-
+    parser.add_argument("--validate_every_n_eps", default=100, type=int,
+                        help="perform one validation after training n episodes")
+    parser.add_argument("--run_n_eps_in_validation", default=10,
+                        type=int, help="num of validation eps per N training eps")
     config = parser.parse_args()
 
     run(config)
