@@ -113,6 +113,19 @@ class DummyVecEnv(VecEnv):
     def step_wait(self):
         results = [env.step(a) for (a,env) in zip(self.actions, self.envs)]
         obs, rews, dones, infos = map(np.array, zip(*results))
+        # print(obs)
+        # print(rews)
+        # print(dones)
+        # print(infos)
+        # print('*'*10)
+        # 这里的envs应该总是只有一个元素; 这里的修改是要让infos直接传出来
+        # result = self.envs[0].step(self.actions[0])
+        # obs, rews, dones, infos = \
+        #     [np.array(result[0])],\
+        #     [np.array(result[1])],\
+        #     [np.array(result[2])],\
+        #     [result[3]]
+
         self.ts += 1
         for (i, done) in enumerate(dones):
             if all(done): 
