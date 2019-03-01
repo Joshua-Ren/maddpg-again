@@ -17,7 +17,7 @@ USE_CUDA = False  # torch.cuda.is_available()
 def make_parallel_env(env_id, n_rollout_threads, seed, discrete_action):
     def get_env_fn(rank):
         def init_env():
-            env = make_env(env_id, discrete_action=discrete_action)
+            env = make_env(env_id, discrete_action=discrete_action, benchmark=True)
             env.seed(seed + rank * 1000)
             np.random.seed(seed + rank * 1000)
             return env
@@ -65,7 +65,7 @@ def run(config):
     print('#########################################################################')
     print('Adversary using: ', config.adversary_alg, 'Good agent using: ',config.agent_alg,'\n')
     print('Noisy SNR is: ', config.noisy_SNR)
-    print('#########################################################################')    
+    print('#########################################################################')
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
         obs = env.reset()
         # obs.shape = (n_rollout_threads, nagent)(nobs), nobs differs per agent so not tensor
@@ -118,6 +118,45 @@ def run(config):
             maddpg.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
             maddpg.save(run_dir / 'model.pt')
 
+        # *** perform validation every 1000 episodes. i.e. run N=10 times without exploration ***
+        if ep_i != 0 and ep_i % config.validate_every_n_eps == 0:
+            # 假设只有一个env在跑
+            info_for_one_env_among_timesteps = []
+
+            print('*'*10,'Validation BEGINS','*'*10)
+            for valid_et_i in range(config.run_n_eps_in_validation):
+                obs = env.reset()
+                maddpg.prep_rollouts(device='cpu')
+                explr_pct_remaining = max(0, config.n_exploration_eps - ep_i) / config.n_exploration_eps
+                maddpg.scale_noise(config.final_noise_scale + (config.init_noise_scale - config.final_noise_scale) * explr_pct_remaining)
+                maddpg.reset_noise()
+
+                for et_i in range(config.episode_length):
+                    # rearrange observations to be per agent, and convert to torch Variable
+                    torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
+                                          requires_grad=False)
+                                 for i in range(maddpg.nagents)]
+                    # get actions as torch Variables
+                    torch_agent_actions = maddpg.step(torch_obs, explore=False)
+                    # convert actions to numpy arrays
+                    agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
+                    # rearrange actions to be per environment
+                    actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
+                    next_obs, rewards, dones, infos = env.step(actions)
+                    info_for_one_env_among_timesteps.append(infos[0]['n'])
+                    obs = next_obs
+            print('Summary statistics:')
+            if config.env_id == 'simple_tag':
+                avg_collisions = sum(map(sum,info_for_one_env_among_timesteps))/config.run_n_eps_in_validation
+                print(f'Avg of collisions: {avg_collisions}')
+            elif config.env_id == 'simple_speaker_listener':
+                for i, stat in enumerate(info_for_one_env_among_timesteps):
+                    print(f'ep {i}: {stat}')
+            else:
+                raise NotImplementedError
+            print('*' * 10, 'Validation ENDS', '*' * 10)
+        # *** END of VALIDATION ***
+
     maddpg.save(run_dir / 'model.pt')
     env.close()
     logger.export_scalars_to_json(str(log_dir / 'summary.json'))
@@ -159,6 +198,10 @@ if __name__ == '__main__':
                         action='store_true')
     parser.add_argument("--noisy_SNR", default = 50, type=float)
 
+    parser.add_argument("--validate_every_n_eps", default=100, type=int,
+                        help="perform one validation after training n episodes")
+    parser.add_argument("--run_n_eps_in_validation", default=10,
+                        type=int, help="num of validation eps per N training eps")
     config = parser.parse_args()
 
     run(config)

@@ -1,5 +1,6 @@
 import numpy as np
-from multiagent.core import World, Agent, Landmark, Border
+from multiagent.core import World, Agent, Landmark
+# , Border
 from multiagent.scenario import BaseScenario
 
 
