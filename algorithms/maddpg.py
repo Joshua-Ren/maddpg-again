@@ -128,6 +128,20 @@ class MADDPG(object):
             else:
                 all_trgt_acs = [pi(nobs) for pi, nobs in zip(self.target_policies, next_obs)]
             
+            # =========================Differential Obs========================
+            # ============== Dedicate for simple_speaker_listener =============
+            diff_pos = (next_obs[0] - obs[0])[:,-2:]
+            tmp_p = torch.transpose(diff_pos.ge(torch.max(diff_pos)*0.8),0,1)
+            tmp_p[0] = tmp_p[0]*1
+            tmp_p[1] = tmp_p[1]*3
+            tmp_n = torch.transpose(diff_pos.le(torch.min(diff_pos)*0.8),0,1)
+            tmp_n[0] = tmp_n[0]*2 
+            tmp_n[1] = tmp_n[1]*4 
+            mask = torch.transpose(tmp_p,0,1)+torch.transpose(tmp_n,0,1)
+            est_action = mask.sum(dim=1)
+            est_action = torch.zeros(len(est_action),acs[1].shape[1]).scatter_(dim=1,index=est_action.view(-1,1),value=1)
+            
+            # =======================End of differential Obs ==================
             # ==========================Adding noise====================
             if self.noisy_sharing == True:
                 noisy_all_trgt_acs = self.noisy_sharing_discrete(all_trgt_acs,agent_i)

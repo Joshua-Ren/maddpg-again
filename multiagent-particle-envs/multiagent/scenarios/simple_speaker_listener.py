@@ -14,6 +14,8 @@ class Scenario(BaseScenario):
             agent.name = 'agent %d' % i
             agent.collide = False
             agent.size = 0.075
+            agent.accel = 10000
+            agent.max_speed = 1
         # speaker
         world.agents[0].movable = False
         # listener
@@ -66,6 +68,9 @@ class Scenario(BaseScenario):
         return -dist2
 
     def observation(self, agent, world):
+        '''
+        
+        '''
         # goal color
         goal_color = np.zeros(world.dim_color)
         if agent.goal_b is not None:
@@ -84,7 +89,11 @@ class Scenario(BaseScenario):
         
         # speaker
         if not agent.movable:
-            return np.concatenate([goal_color])
+            #return np.concatenate([goal_color])
+            for i, agent in enumerate(world.agents):
+                if agent.movable:
+                    ob_pos = agent.state.p_pos
+            return np.concatenate([goal_color]+[ob_pos])         # Let the speaker know the listener's poistion
         # listener
         if agent.silent:
             return np.concatenate([agent.state.p_vel] + entity_pos + comm)
