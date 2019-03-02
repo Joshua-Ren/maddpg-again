@@ -56,7 +56,9 @@ def run(config):
                                   lr=config.lr,
                                   hidden_dim=config.hidden_dim,
                                   noisy_sharing = True,
-                                  noisy_SNR = config.noisy_SNR)
+                                  noisy_SNR = config.noisy_SNR,
+                                  game_id = config.env_id,
+                                  est_ac = config.est_action)
     replay_buffer = ReplayBuffer(config.buffer_length, maddpg.nagents,
                                  [obsp.shape[0] for obsp in env.observation_space],
                                  [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
@@ -145,6 +147,7 @@ def run(config):
                     next_obs, rewards, dones, infos = env.step(actions)
                     info_for_one_env_among_timesteps.append(infos[0]['n'])
                     obs = next_obs
+            '''
             print('Summary statistics:')
             if config.env_id == 'simple_tag':
                 avg_collisions = sum(map(sum,info_for_one_env_among_timesteps))/config.run_n_eps_in_validation
@@ -155,6 +158,7 @@ def run(config):
             else:
                 raise NotImplementedError
             print('*' * 10, 'Validation ENDS', '*' * 10)
+            '''
         # *** END of VALIDATION ***
 
     maddpg.save(run_dir / 'model.pt')
@@ -197,6 +201,7 @@ if __name__ == '__main__':
     parser.add_argument("--discrete_action",
                         action='store_true')
     parser.add_argument("--noisy_SNR", default = 50, type=float)
+    parser.add_argument("--est_action", default = False)
 
     parser.add_argument("--validate_every_n_eps", default=100, type=int,
                         help="perform one validation after training n episodes")
