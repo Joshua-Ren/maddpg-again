@@ -130,6 +130,7 @@ class MADDPG(object):
             
             # =========================Differential Obs========================
             # ============== Dedicate for simple_speaker_listener =============
+            '''
             diff_pos = (next_obs[0] - obs[0])[:,-2:]
             tmp_p = torch.transpose(diff_pos.ge(torch.max(diff_pos)*0.8),0,1)
             tmp_p[0] = tmp_p[0]*1
@@ -140,7 +141,7 @@ class MADDPG(object):
             mask = torch.transpose(tmp_p,0,1)+torch.transpose(tmp_n,0,1)
             est_action = mask.sum(dim=1)
             est_action = torch.zeros(len(est_action),acs[1].shape[1]).scatter_(dim=1,index=est_action.view(-1,1),value=1)
-            
+            '''
             # =======================End of differential Obs ==================
             # ==========================Adding noise====================
             if self.noisy_sharing == True:
