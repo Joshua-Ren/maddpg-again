@@ -74,7 +74,7 @@ np.random.seed(1024)
 
 env = make_parallel_env(env_id, n_rollout_threads, 1024, True)
 maddpg = MADDPG.init_from_env(env, agent_alg='MADDPG', adversary_alg='MADDPG', 
-                              tau=0.01, lr=0.01, hidden_dim=64)
+                              tau=0.01, lr=0.01, hidden_dim=64,est_ac=True, game_id = 'simple_speaker_listener')
 
 replay_buffer = ReplayBuffer(buffer_length, maddpg.nagents,
                                  [obsp.shape[0] for obsp in env.observation_space],

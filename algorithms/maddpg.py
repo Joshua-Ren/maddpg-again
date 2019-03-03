@@ -14,7 +14,8 @@ class MADDPG(object):
     """
     def __init__(self, agent_init_params, alg_types,
                  gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64,
-                 discrete_action=False,noisy_sharing = True,noisy_SNR = 50):
+                 discrete_action=False,noisy_sharing = True,noisy_SNR = 50,
+                 game_id=None,est_ac=False):
         """
         Inputs:
             agent_init_params (list of dict): List of dicts with parameters to
@@ -50,6 +51,11 @@ class MADDPG(object):
         self.noisy_sharing = noisy_sharing
         self.noisy_SNR = noisy_SNR    # In dB
         # ====================End of Adding noise====================
+        
+        # =========================Differential Obs========================
+        self.game_id = game_id
+        self.est_ac = est_ac
+        # =======================End of differential Obs ==================
     @property
     def policies(self):
         return [a.policy for a in self.agents]
@@ -130,10 +136,30 @@ class MADDPG(object):
             
             # ==========================Adding noise====================
             if self.noisy_sharing == True:
-                noisy_all_trgt_acs = self.noisy_sharing_discrete(all_trgt_acs,agent_i)
-                all_trgt_acs = noisy_all_trgt_acs   
+                #noisy_all_trgt_acs = self.noisy_sharing_discrete(all_trgt_acs,agent_i)
+                #all_trgt_acs = noisy_all_trgt_acs   
+                noisy_acs = self.noisy_sharing_discrete(acs,agent_i)
+                acs = noisy_acs
             # ==================End of Adding noise====================
             trgt_vf_in = torch.cat((*next_obs, *all_trgt_acs), dim=1)
+            
+            # =========================Differential Obs========================
+            # ============== Dedicate for simple_speaker_listener =============
+            # The est_action is used to replace acs[1]
+            if self.game_id == 'simple_speaker_listener' and self.est_ac == True:   
+                diff_pos = (next_obs[0] - obs[0])[:,-2:]
+                tmp_p = torch.transpose(diff_pos.ge(torch.max(diff_pos)*0.8),0,1)
+                tmp_p[0] = tmp_p[0]*1
+                tmp_p[1] = tmp_p[1]*3
+                tmp_n = torch.transpose(diff_pos.le(torch.min(diff_pos)*0.8),0,1)
+                tmp_n[0] = tmp_n[0]*2 
+                tmp_n[1] = tmp_n[1]*4 
+                mask = torch.transpose(tmp_p,0,1)+torch.transpose(tmp_n,0,1)
+                est_action = mask.sum(dim=1)
+                est_action = torch.zeros(len(est_action),acs[1].shape[1]).scatter_(dim=1,index=est_action.view(-1,1),value=1)
+                acs[1] = est_action
+                
+            # =======================End of differential Obs ==================
         else:  # DDPG
             if self.discrete_action:
                 trgt_vf_in = torch.cat((next_obs[agent_i],
@@ -264,7 +290,8 @@ class MADDPG(object):
 
     @classmethod
     def init_from_env(cls, env, agent_alg="MADDPG", adversary_alg="MADDPG",
-                      gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64, noisy_sharing = True,noisy_SNR = 50):
+                      gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64, noisy_sharing = True,
+                      noisy_SNR = 50,game_id=None,est_ac=False):
         """
         Instantiate instance of this class from multi-agent environment
         """
@@ -297,7 +324,9 @@ class MADDPG(object):
                      'alg_types': alg_types,
                      'agent_init_params': agent_init_params,
                      'discrete_action': discrete_action,
-                     'noisy_SNR':noisy_SNR}
+                     'noisy_SNR':noisy_SNR,
+                     'game_id':game_id,
+                     'est_ac':est_ac}
         instance = cls(**init_dict)
         instance.init_dict = init_dict
         return instance
