@@ -124,7 +124,7 @@ def run(config):
         if ep_i != 0 and ep_i % config.validate_every_n_eps == 0:
             # 假设只有一个env在跑
             info_for_one_env_among_timesteps = []
-
+            '''
             print('*'*10,'Validation BEGINS','*'*10)
             for valid_et_i in range(config.run_n_eps_in_validation):
                 obs = env.reset()
@@ -147,7 +147,7 @@ def run(config):
                     next_obs, rewards, dones, infos = env.step(actions)
                     info_for_one_env_among_timesteps.append(infos[0]['n'])
                     obs = next_obs
-            '''
+            
             print('Summary statistics:')
             if config.env_id == 'simple_tag':
                 avg_collisions = sum(map(sum,info_for_one_env_among_timesteps))/config.run_n_eps_in_validation

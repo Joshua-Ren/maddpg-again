@@ -136,8 +136,8 @@ class MADDPG(object):
             
             # ==========================Adding noise====================
             if self.noisy_sharing == True:
-                noisy_all_trgt_acs = self.noisy_sharing_discrete(all_trgt_acs,agent_i)
-                all_trgt_acs = noisy_all_trgt_acs   
+                #noisy_all_trgt_acs = self.noisy_sharing_discrete(all_trgt_acs,agent_i)
+                #all_trgt_acs = noisy_all_trgt_acs   
                 noisy_acs = self.noisy_sharing_discrete(acs,agent_i)
                 acs = noisy_acs
             # ==================End of Adding noise====================
