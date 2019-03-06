@@ -140,7 +140,7 @@ class MADDPG(object):
                 #all_trgt_acs = noisy_all_trgt_acs   
                 noisy_acs = self.noisy_sharing_discrete(acs,agent_i)
                 acs = noisy_acs
-                print(self.noisy_SNR)
+                # print(self.noisy_SNR)
 
             # ==================End of Adding noise====================
             trgt_vf_in = torch.cat((*next_obs, *all_trgt_acs), dim=1)

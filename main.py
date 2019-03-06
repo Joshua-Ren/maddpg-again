@@ -11,7 +11,7 @@ from utils.make_env import make_env
 from utils.buffer import ReplayBuffer
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 from algorithms.maddpg import MADDPG
-
+import csv
 USE_CUDA = False  # torch.cuda.is_available()
 
 def make_parallel_env(env_id, n_rollout_threads, seed, discrete_action):
@@ -43,6 +43,9 @@ def run(config):
     log_dir = run_dir / 'logs'
     os.makedirs(log_dir)
     logger = SummaryWriter(str(log_dir))
+
+
+
 
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
@@ -124,8 +127,8 @@ def run(config):
         # *** perform validation every 1000 episodes. i.e. run N=10 times without exploration ***
         if ep_i != 0 and ep_i % config.validate_every_n_eps == 0:
             # 假设只有一个env在跑
+            episodes_stats = []
             info_for_one_env_among_timesteps = []
-            '''
             print('*'*10,'Validation BEGINS','*'*10)
             for valid_et_i in range(config.run_n_eps_in_validation):
                 obs = env.reset()
@@ -134,6 +137,7 @@ def run(config):
                 maddpg.scale_noise(config.final_noise_scale + (config.init_noise_scale - config.final_noise_scale) * explr_pct_remaining)
                 maddpg.reset_noise()
 
+                curr_episode_stats = []
                 for et_i in range(config.episode_length):
                     # rearrange observations to be per agent, and convert to torch Variable
                     torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
@@ -146,26 +150,40 @@ def run(config):
                     # rearrange actions to be per environment
                     actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
                     next_obs, rewards, dones, infos = env.step(actions)
+
                     info_for_one_env_among_timesteps.append(infos[0]['n'])
+
+                    curr_episode_stats.append(infos[0]['n'])
+
                     obs = next_obs
-            
+                episodes_stats.append(curr_episode_stats)
+
             print('Summary statistics:')
             if config.env_id == 'simple_tag':
-                avg_collisions = sum(map(sum,info_for_one_env_among_timesteps))/config.run_n_eps_in_validation
+                # avg_collisions = sum(map(sum,info_for_one_env_among_timesteps))/config.run_n_eps_in_validation
+                episodes_stats = np.array(episodes_stats)
+                # print(episodes_stats.shape)
+                # validation logging
+                with open(f'{config.model_name}.log', 'a') as valid_logfile:
+                    valid_logwriter = csv.writer(valid_logfile, delimiter=' ')
+                    valid_logwriter.writerow(np.sum(episodes_stats,axis=(1,2)).tolist())
+                avg_collisions = np.sum(episodes_stats)/episodes_stats.shape[0]
                 print(f'Avg of collisions: {avg_collisions}')
+
             elif config.env_id == 'simple_speaker_listener':
                 for i, stat in enumerate(info_for_one_env_among_timesteps):
                     print(f'ep {i}: {stat}')
             else:
                 raise NotImplementedError
             print('*' * 10, 'Validation ENDS', '*' * 10)
-            '''
+
         # *** END of VALIDATION ***
 
     maddpg.save(run_dir / 'model.pt')
     env.close()
     logger.export_scalars_to_json(str(log_dir / 'summary.json'))
     logger.close()
+    valid_logfile.close()
 
 
 if __name__ == '__main__':
