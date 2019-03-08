@@ -125,7 +125,7 @@ def run(config):
             maddpg.save(run_dir / 'model.pt')
 
         # *** perform validation every 1000 episodes. i.e. run N=10 times without exploration ***
-        if ep_i != 0 and ep_i % config.validate_every_n_eps == 0:
+        if ep_i % config.validate_every_n_eps == config.validate_every_n_eps-1:
             # 假设只有一个env在跑
             episodes_stats = []
             info_for_one_env_among_timesteps = []
