@@ -1,4 +1,5 @@
 import torch
+from torch.nn import Linear
 import torch.nn.functional as F
 from gym.spaces import Box, Discrete
 from utils.networks import MLPNetwork
@@ -15,7 +16,8 @@ class MADDPG(object):
     def __init__(self, agent_init_params, alg_types,
                  gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64,
                  discrete_action=False,noisy_sharing = True,noisy_SNR = 50,
-                 game_id=None,est_ac=False):
+                 game_id=None,est_ac=False,
+                 n_pos_obs_offset=1,n_neg_obs_offset=1):
         """
         Inputs:
             agent_init_params (list of dict): List of dicts with parameters to
@@ -56,6 +58,14 @@ class MADDPG(object):
         self.game_id = game_id
         self.est_ac = est_ac
         # =======================End of differential Obs ==================
+
+
+        # ================== Estimating actions ==================
+        if game_id == 'simple_speaker_listener':
+            # NOTE: for agent 0 in simple_speaker_listener only
+            self.est_ac_l1 = Linear(5*(n_pos_obs_offset+n_neg_obs_offset+1),5)
+
+        # ================== Estimating actions ==================
     @property
     def policies(self):
         return [a.policy for a in self.agents]
@@ -123,11 +133,16 @@ class MADDPG(object):
             logger (SummaryWriter from Tensorboard-Pytorch):
                 If passed in, important quantities will be logged
         """
-        obs, acs, rews, next_obs, dones = sample
+        obs, acs, rews, next_obs, dones, pos_obs, neg_obs = sample
+        # print('DEBUG:', obs.shape, acs.shape, pos_obs.shape, neg_obs.shape)
+
         curr_agent = self.agents[agent_i]
         
         curr_agent.critic_optimizer.zero_grad()
+        # print('aaaaa')
+        # print(self.alg_types[agent_i])
         if self.alg_types[agent_i] == 'MADDPG':
+
             if self.discrete_action: # one-hot encode action
                 all_trgt_acs = [onehot_from_logits(pi(nobs)) for pi, nobs in
                                 zip(self.target_policies, next_obs)] # a'=mu'(o') Have all agents'
@@ -144,22 +159,45 @@ class MADDPG(object):
 
             # ==================End of Adding noise====================
             trgt_vf_in = torch.cat((*next_obs, *all_trgt_acs), dim=1)
-            
+
+            # ========================= Estimating actions ========================
+            # print('here')
+            if self.est_ac:
+                if self.game_id == 'simple_speaker_listener':
+                    if agent_i == 0: # only for agent 0 (i.e. speaker)
+                        for i, ac in enumerate(acs):
+                            if i != agent_i:
+                                continue
+                            # print(obs[agent_i].shape,pos_obs[agent_i].shape,neg_obs[agent_i].shape)
+                            est_acs = self.est_ac_l1(torch.cat([obs[agent_i], pos_obs[agent_i], neg_obs[agent_i]],dim=1))
+                            # print('DEBUG:',est_acs.shape,acs[1].shape)
+                            acs[1] = gumbel_softmax(est_acs,hard=True)
+                            # print('run softmax')
+                            # print('works?')
+                    else:
+                        pass
+                elif self.game_id == 'simple_tag':
+                    raise NotImplementedError
+                else:
+                    raise NotImplementedError
+
+            # ===================== End of estimating actions ====================
+
             # =========================Differential Obs========================
             # ============== Dedicate for simple_speaker_listener =============
-            # The est_action is used to replace acs[1]
-            if self.game_id == 'simple_speaker_listener' and self.est_ac == True:   
-                diff_pos = (next_obs[0] - obs[0])[:,-2:]
-                tmp_p = torch.transpose(diff_pos.ge(torch.max(diff_pos)*0.8),0,1)
-                tmp_p[0] = tmp_p[0]*1
-                tmp_p[1] = tmp_p[1]*3
-                tmp_n = torch.transpose(diff_pos.le(torch.min(diff_pos)*0.8),0,1)
-                tmp_n[0] = tmp_n[0]*2 
-                tmp_n[1] = tmp_n[1]*4 
-                mask = torch.transpose(tmp_p,0,1)+torch.transpose(tmp_n,0,1)
-                est_action = mask.sum(dim=1)
-                est_action = torch.zeros(len(est_action),acs[1].shape[1]).scatter_(dim=1,index=est_action.view(-1,1),value=1)
-                acs[1] = est_action
+            # # The est_action is used to replace acs[1]
+            # if self.game_id == 'simple_speaker_listener' and self.est_ac == True:
+            #     diff_pos = (next_obs[0] - obs[0])[:,-2:]
+            #     tmp_p = torch.transpose(diff_pos.ge(torch.max(diff_pos)*0.8),0,1)
+            #     tmp_p[0] = tmp_p[0]*1
+            #     tmp_p[1] = tmp_p[1]*3
+            #     tmp_n = torch.transpose(diff_pos.le(torch.min(diff_pos)*0.8),0,1)
+            #     tmp_n[0] = tmp_n[0]*2
+            #     tmp_n[1] = tmp_n[1]*4
+            #     mask = torch.transpose(tmp_p,0,1)+torch.transpose(tmp_n,0,1)
+            #     est_action = mask.sum(dim=1)
+            #     est_action = torch.zeros(len(est_action),acs[1].shape[1]).scatter_(dim=1,index=est_action.view(-1,1),value=1)
+            #     acs[1] = est_action
                 
             # =======================End of differential Obs ==================
         else:  # DDPG
@@ -293,7 +331,8 @@ class MADDPG(object):
     @classmethod
     def init_from_env(cls, env, agent_alg="MADDPG", adversary_alg="MADDPG",
                       gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64, noisy_sharing = True,
-                      noisy_SNR = 50,game_id=None,est_ac=False):
+                      noisy_SNR = 50,game_id=None,est_ac=False,
+                      n_pos_obs_offset=2, n_neg_obs_offset=2):
         """
         Instantiate instance of this class from multi-agent environment
         """
@@ -328,7 +367,9 @@ class MADDPG(object):
                      'discrete_action': discrete_action,
                      'noisy_SNR':noisy_SNR,
                      'game_id':game_id,
-                     'est_ac':est_ac}
+                     'est_ac':est_ac,
+                     'n_pos_obs_offset': n_pos_obs_offset,
+                     'n_neg_obs_offset': n_neg_obs_offset}
         instance = cls(**init_dict)
         instance.init_dict = init_dict
         return instance

@@ -104,7 +104,7 @@ def run(config):
                     maddpg.prep_training(device='cpu')
                 for u_i in range(config.n_rollout_threads):
                     for a_i in range(maddpg.nagents):
-                        sample = replay_buffer.sample(config.batch_size, to_gpu=USE_CUDA)
+                        sample = replay_buffer.sample(config.batch_size, to_gpu=USE_CUDA, other_pos_n=2, other_neg_n=2)
                         maddpg.update(sample, a_i, logger=logger)
                     maddpg.update_all_targets()
                     

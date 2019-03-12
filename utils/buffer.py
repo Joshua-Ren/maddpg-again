@@ -68,7 +68,8 @@ class ReplayBuffer(object):
         if self.curr_i == self.max_steps:
             self.curr_i = 0
 
-    def sample(self, N, to_gpu=False, norm_rews=True):
+    def sample(self, N, to_gpu=False, norm_rews=True,
+               other_pos_n = 2, other_neg_n = 2):
         inds = np.random.choice(np.arange(self.filled_i), size=N,
                                 replace=False)
         if to_gpu:
@@ -82,11 +83,44 @@ class ReplayBuffer(object):
                         for i in range(self.num_agents)]
         else:
             ret_rews = [cast(self.rew_buffs[i][inds]) for i in range(self.num_agents)]
+
+        # print('DEBUG',len(self.obs_buffs),self.obs_buffs[0][897].shape)
+        # sampling obs in negative/positive directions (e.g. s_(t-x), s_(t+x) )
+        pos_obs = [np.zeros((N,other_pos_n*5)) for i in range(self.num_agents)]
+        neg_obs = [np.zeros((N,other_neg_n*5)) for i in range(self.num_agents)]
+        for i in range(self.num_agents):
+            if i == 1:
+                # 我不知道该怎么处理listener的观察，这里是忽略之
+                continue
+            for j, ind in enumerate(inds):
+
+                if ind == 0:
+                    pass
+                elif ind <= other_neg_n - 1 :
+                    # print('DEBUG',i,j,ind,self.obs_buffs[i][:ind])
+                    neg_obs[i][j, -ind*5:] = np.concatenate(self.obs_buffs[i][:ind],axis=0)
+                else:
+                    # print(np.concatenate(self.obs_buffs[i][ind-other_neg_n:ind],axis=0).shape)
+                    # print(neg_obs[i][j,:], self.obs_buffs[i][ind-other_neg_n:ind])
+                    # print('DEBUG',i,j,ind,self.obs_buffs[i][ind-other_neg_n:ind])
+                    neg_obs[i][j,:] = np.concatenate(self.obs_buffs[i][ind-other_neg_n:ind],axis=0)
+
+                if ind == self.filled_i-1:
+                    pass
+                elif ind >= self.filled_i - other_pos_n:
+                    pos_obs[i][j,:(self.filled_i-ind-1)*5] = np.concatenate(self.obs_buffs[i][ind+1:self.filled_i],axis=0)
+                else:
+                    pos_obs[i][j,:] = np.concatenate(self.obs_buffs[i][ind+1:ind+1+other_pos_n],axis=0)
+
+
         return ([cast(self.obs_buffs[i][inds]) for i in range(self.num_agents)],
                 [cast(self.ac_buffs[i][inds]) for i in range(self.num_agents)],
                 ret_rews,
                 [cast(self.next_obs_buffs[i][inds]) for i in range(self.num_agents)],
-                [cast(self.done_buffs[i][inds]) for i in range(self.num_agents)])
+                [cast(self.done_buffs[i][inds]) for i in range(self.num_agents)],
+                [cast(pos_ob) for pos_ob in pos_obs],
+                [cast(neg_ob) for neg_ob in neg_obs]
+                )
 
     def get_average_rewards(self, N):
         if self.filled_i == self.max_steps:
