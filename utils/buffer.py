@@ -69,7 +69,7 @@ class ReplayBuffer(object):
             self.curr_i = 0
 
     def sample(self, N, to_gpu=False, norm_rews=True,
-               other_pos_n = 2, other_neg_n = 2):
+               other_pos_n = 1, other_neg_n = 1):
         inds = np.random.choice(np.arange(self.filled_i), size=N,
                                 replace=False)
         if to_gpu:

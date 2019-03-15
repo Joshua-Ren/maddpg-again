@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torch.nn import Linear
 import torch.nn.functional as F
 from gym.spaces import Box, Discrete
@@ -17,7 +18,7 @@ class MADDPG(object):
                  gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64,
                  discrete_action=False,noisy_sharing = True,noisy_SNR = 50,
                  game_id=None,est_ac=False,
-                 n_pos_obs_offset=1,n_neg_obs_offset=1):
+                 L_sample=1,M_sample=1):
         """
         Inputs:
             agent_init_params (list of dict): List of dicts with parameters to
@@ -63,7 +64,10 @@ class MADDPG(object):
         # ================== Estimating actions ==================
         if game_id == 'simple_speaker_listener':
             # NOTE: for agent 0 in simple_speaker_listener only
-            self.est_ac_l1 = Linear(5*(n_pos_obs_offset+n_neg_obs_offset+1),5)
+            #self.in_fn = nn.BatchNorm1d(2*(n_pos_obs_offset+n_neg_obs_offset+1))
+            self.est_ac_l1 = nn.Linear(2*(L_sample+M_sample+1),64)
+            self.est_hidden = nn.Linear(64,5)
+            self.out_ac_l1 = nn.SELU()
 
         # ================== Estimating actions ==================
     @property
@@ -120,6 +124,19 @@ class MADDPG(object):
                 noisy_actions.append(one_hot)
         return noisy_actions
     
+    def extract_pos(self,obs):
+        '''
+            Extract position observations and concatenate them
+            Specific for game1
+        '''
+        mask = []
+        length = int((obs.shape[1]-1)/5)
+        for i in range(length+1):
+            mask.append(i*5+3)
+            mask.append(i*5+4)
+        return obs[:][:,mask]
+         
+    
     def update(self, sample, agent_i, parallel=False, logger=None):
         """
         Update parameters of agent model based on sample from replay buffer
@@ -152,9 +169,10 @@ class MADDPG(object):
             # ==========================Adding noise====================
             if self.noisy_sharing == True:
                 #noisy_all_trgt_acs = self.noisy_sharing_discrete(all_trgt_acs,agent_i)
-                #all_trgt_acs = noisy_all_trgt_acs   
-                noisy_acs = self.noisy_sharing_discrete(acs,agent_i)
-                acs = noisy_acs
+                #all_trgt_acs = noisy_all_trgt_acs
+                if agent_i == 0:
+                    noisy_acs = self.noisy_sharing_discrete(acs,agent_i)
+                    acs = noisy_acs
                 # print(self.noisy_SNR)
 
             # ==================End of Adding noise====================
@@ -169,7 +187,12 @@ class MADDPG(object):
                             if i != agent_i:
                                 continue
                             # print(obs[agent_i].shape,pos_obs[agent_i].shape,neg_obs[agent_i].shape)
-                            est_acs = self.est_ac_l1(torch.cat([obs[agent_i], pos_obs[agent_i], neg_obs[agent_i]],dim=1))
+                            concat_obs = torch.cat([obs[agent_i], pos_obs[agent_i], neg_obs[agent_i]],dim=1)
+                            norm_in = self.extract_pos(concat_obs)      # Only require position information
+                            lin_ac = self.est_ac_l1(norm_in)
+                            hidden = self.est_hidden(lin_ac)
+                            est_acs = self.out_ac_l1(hidden)
+                            #est_acs = lin_ac
                             # print('DEBUG:',est_acs.shape,acs[1].shape)
                             acs[1] = gumbel_softmax(est_acs,hard=True)
                             # print('run softmax')
@@ -332,7 +355,7 @@ class MADDPG(object):
     def init_from_env(cls, env, agent_alg="MADDPG", adversary_alg="MADDPG",
                       gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64, noisy_sharing = True,
                       noisy_SNR = 50,game_id=None,est_ac=False,
-                      n_pos_obs_offset=2, n_neg_obs_offset=2):
+                      L_sample=1, M_sample=1):
         """
         Instantiate instance of this class from multi-agent environment
         """
@@ -368,8 +391,8 @@ class MADDPG(object):
                      'noisy_SNR':noisy_SNR,
                      'game_id':game_id,
                      'est_ac':est_ac,
-                     'n_pos_obs_offset': n_pos_obs_offset,
-                     'n_neg_obs_offset': n_neg_obs_offset}
+                     'L_sample': L_sample,
+                     'M_sample': M_sample}
         instance = cls(**init_dict)
         instance.init_dict = init_dict
         return instance

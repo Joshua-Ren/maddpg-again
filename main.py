@@ -83,6 +83,8 @@ def run(config):
 
         for et_i in range(config.episode_length):
             # rearrange observations to be per agent, and convert to torch Variable
+            if et_i%4000 ==1:
+                maddpg.lr *=0.4
             torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
                                   requires_grad=False)
                          for i in range(maddpg.nagents)]
@@ -104,7 +106,9 @@ def run(config):
                     maddpg.prep_training(device='cpu')
                 for u_i in range(config.n_rollout_threads):
                     for a_i in range(maddpg.nagents):
-                        sample = replay_buffer.sample(config.batch_size, to_gpu=USE_CUDA, other_pos_n=2, other_neg_n=2)
+                        sample = replay_buffer.sample(config.batch_size, to_gpu=USE_CUDA, 
+                                                      other_pos_n=config.L_sample, 
+                                                      other_neg_n=config.M_sample)
                         maddpg.update(sample, a_i, logger=logger)
                     maddpg.update_all_targets()
                     
@@ -124,6 +128,7 @@ def run(config):
             maddpg.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
             maddpg.save(run_dir / 'model.pt')
 
+        '''
         # *** perform validation every 1000 episodes. i.e. run N=10 times without exploration ***
         if ep_i % config.validate_every_n_eps == config.validate_every_n_eps-1:
             # 假设只有一个env在跑
@@ -178,7 +183,7 @@ def run(config):
             print('*' * 10, 'Validation ENDS', '*' * 10)
 
         # *** END of VALIDATION ***
-
+        '''
     maddpg.save(run_dir / 'model.pt')
     env.close()
     logger.export_scalars_to_json(str(log_dir / 'summary.json'))
@@ -193,7 +198,7 @@ if __name__ == '__main__':
                         help="Name of directory to store " +
                              "model/training contents")
     parser.add_argument("--seed",
-                        default=1, type=int,
+                        default=1024, type=int,
                         help="Random seed")
     parser.add_argument("--n_rollout_threads", default=1, type=int)
     parser.add_argument("--n_training_threads", default=6, type=int)
@@ -209,10 +214,10 @@ if __name__ == '__main__':
     parser.add_argument("--final_noise_scale", default=0.0, type=float)
     parser.add_argument("--save_interval", default=1000, type=int)
     parser.add_argument("--hidden_dim", default=64, type=int)
-    parser.add_argument("--lr", default=0.005, type=float)
+    parser.add_argument("--lr", default=0.001, type=float)
     parser.add_argument("--tau", default=0.01, type=float)
     parser.add_argument("--agent_alg",
-                        default="DDPG", type=str,
+                        default="MADDPG", type=str,
                         choices=['MADDPG', 'DDPG'])
     parser.add_argument("--adversary_alg",
                         default="MADDPG", type=str,
@@ -221,7 +226,8 @@ if __name__ == '__main__':
                         action='store_true')
     parser.add_argument("--noisy_SNR", default = 50, type=float)
     parser.add_argument("--est_action", default = False)
-
+    parser.add_argument("--L_sample", default = 1,type=int)
+    parser.add_argument("--M_sample", default = 1,type=int)
     parser.add_argument("--validate_every_n_eps", default=100, type=int,
                         help="perform one validation after training n episodes")
     parser.add_argument("--run_n_eps_in_validation", default=10,
