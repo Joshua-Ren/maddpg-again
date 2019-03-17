@@ -74,7 +74,9 @@ np.random.seed(1024)
 
 env = make_parallel_env(env_id, n_rollout_threads, 1024, True)
 maddpg = MADDPG.init_from_env(env, agent_alg='MADDPG', adversary_alg='MADDPG', 
-                              tau=0.01, lr=0.01, hidden_dim=64,est_ac=True, game_id = 'simple_speaker_listener')
+                              tau=0.01, lr=0.01, hidden_dim=64,
+                              est_ac=True, game_id = 'simple_speaker_listener',
+                              L_sample=1,M_sample=3)
 
 replay_buffer = ReplayBuffer(buffer_length, maddpg.nagents,
                                  [obsp.shape[0] for obsp in env.observation_space],
@@ -122,7 +124,7 @@ for ep_i in range(0, 10, 1):
             maddpg.prep_training(device='cpu')      # If use GPU, here change
             for u_i in range(n_rollout_threads):
                 for a_i in range(maddpg.nagents):
-                    sample = replay_buffer.sample(batch_size, to_gpu=USE_CUDA)
+                    sample = replay_buffer.sample(batch_size, to_gpu=USE_CUDA,other_pos_n=1,other_neg_n=3)
                     maddpg.update(sample, a_i, logger=logger)
                 maddpg.update_all_targets()
             maddpg.prep_rollouts(device='cpu')

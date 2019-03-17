@@ -14,8 +14,8 @@ class Scenario(BaseScenario):
             agent.name = 'agent %d' % i
             agent.collide = False
             agent.size = 0.075
-            agent.accel = 10000
-            agent.max_speed = 1
+            #agent.accel = 10000
+            #agent.max_speed = 1
         # speaker
         world.agents[0].movable = False
         # listener

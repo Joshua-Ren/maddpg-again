@@ -61,7 +61,9 @@ def run(config):
                                   noisy_sharing = True,
                                   noisy_SNR = config.noisy_SNR,
                                   game_id = config.env_id,
-                                  est_ac = config.est_action)
+                                  est_ac = config.est_action,
+                                  L_sample = config.L_sample,
+                                  M_sample = config.M_sample)
     replay_buffer = ReplayBuffer(config.buffer_length, maddpg.nagents,
                                  [obsp.shape[0] for obsp in env.observation_space],
                                  [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
@@ -83,10 +85,7 @@ def run(config):
 
         for et_i in range(config.episode_length):
             # rearrange observations to be per agent, and convert to torch Variable
-            if et_i%4000 ==1:
-                maddpg.lr *=0.4
-            torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
-                                  requires_grad=False)
+            torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),requires_grad=False)
                          for i in range(maddpg.nagents)]
             # get actions as torch Variables
             torch_agent_actions = maddpg.step(torch_obs, explore=True)

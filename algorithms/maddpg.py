@@ -14,11 +14,10 @@ class MADDPG(object):
     """
     Wrapper class for DDPG-esque (i.e. also MADDPG) agents in multi-agent task
     """
-    def __init__(self, agent_init_params, alg_types,
+    def __init__(self, agent_init_params, alg_types, L_sample,M_sample,
                  gamma=0.95, tau=0.01, lr=0.01, hidden_dim=64,
                  discrete_action=False,noisy_sharing = True,noisy_SNR = 50,
-                 game_id=None,est_ac=False,
-                 L_sample=1,M_sample=1):
+                 game_id=None,est_ac=False):
         """
         Inputs:
             agent_init_params (list of dict): List of dicts with parameters to
@@ -50,6 +49,8 @@ class MADDPG(object):
         self.trgt_pol_dev = 'cpu'  # device for target policies
         self.trgt_critic_dev = 'cpu'  # device for target critics
         self.niter = 0
+        self.L_sample = L_sample
+        self.M_sample = M_sample
         # ==========================Adding noise====================
         self.noisy_sharing = noisy_sharing
         self.noisy_SNR = noisy_SNR    # In dB
@@ -65,7 +66,7 @@ class MADDPG(object):
         if game_id == 'simple_speaker_listener':
             # NOTE: for agent 0 in simple_speaker_listener only
             #self.in_fn = nn.BatchNorm1d(2*(n_pos_obs_offset+n_neg_obs_offset+1))
-            self.est_ac_l1 = nn.Linear(2*(L_sample+M_sample+1),64)
+            self.est_ac_l1 = nn.Linear(2*(self.L_sample+M_sample+1),64)
             self.est_hidden = nn.Linear(64,5)
             self.out_ac_l1 = nn.SELU()
 
@@ -180,13 +181,14 @@ class MADDPG(object):
 
             # ========================= Estimating actions ========================
             # print('here')
-            if self.est_ac:
+            if self.est_ac=='True':
                 if self.game_id == 'simple_speaker_listener':
                     if agent_i == 0: # only for agent 0 (i.e. speaker)
                         for i, ac in enumerate(acs):
                             if i != agent_i:
                                 continue
                             # print(obs[agent_i].shape,pos_obs[agent_i].shape,neg_obs[agent_i].shape)
+                            #print(self.est_ac)
                             concat_obs = torch.cat([obs[agent_i], pos_obs[agent_i], neg_obs[agent_i]],dim=1)
                             norm_in = self.extract_pos(concat_obs)      # Only require position information
                             lin_ac = self.est_ac_l1(norm_in)
