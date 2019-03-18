@@ -107,7 +107,8 @@ def run(config):
                     for a_i in range(maddpg.nagents):
                         sample = replay_buffer.sample(config.batch_size, to_gpu=USE_CUDA, 
                                                       other_pos_n=config.L_sample, 
-                                                      other_neg_n=config.M_sample)
+                                                      other_neg_n=config.M_sample,
+                                                      game_id = config.env_id)
                         maddpg.update(sample, a_i, logger=logger)
                     maddpg.update_all_targets()
                     
@@ -187,7 +188,7 @@ def run(config):
     env.close()
     logger.export_scalars_to_json(str(log_dir / 'summary.json'))
     logger.close()
-    valid_logfile.close()
+    #valid_logfile.close()
 
 
 if __name__ == '__main__':
@@ -216,7 +217,7 @@ if __name__ == '__main__':
     parser.add_argument("--lr", default=0.001, type=float)
     parser.add_argument("--tau", default=0.01, type=float)
     parser.add_argument("--agent_alg",
-                        default="MADDPG", type=str,
+                        default="DDPG", type=str,
                         choices=['MADDPG', 'DDPG'])
     parser.add_argument("--adversary_alg",
                         default="MADDPG", type=str,

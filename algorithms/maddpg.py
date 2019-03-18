@@ -66,10 +66,17 @@ class MADDPG(object):
         if game_id == 'simple_speaker_listener':
             # NOTE: for agent 0 in simple_speaker_listener only
             #self.in_fn = nn.BatchNorm1d(2*(n_pos_obs_offset+n_neg_obs_offset+1))
-            self.est_ac_l1 = nn.Linear(2*(self.L_sample+M_sample+1),64)
+            self.est_ac_l1 = nn.Linear(2*(self.L_sample+self.M_sample+1),64)
             self.est_hidden = nn.Linear(64,5)
             self.out_ac_l1 = nn.SELU()
-
+        if game_id == 'simple_tag':
+            # NOTE: for agent 0 in simple_speaker_listener only
+            #self.in_fn = nn.BatchNorm1d(8*(n_pos_obs_offset+n_neg_obs_offset+1))
+            self.est_ac_l1 = nn.Linear(8*(self.L_sample+self.M_sample+1),128)
+            self.est_hidden1 = nn.Linear(128,64)
+            self.est_hidden2_list = [nn.Linear(64,5),nn.Linear(64,5),nn.Linear(64,5),nn.Linear(64,5)]
+            #self.out_ac_l1 = nn.SELU()
+            self.out_ac_list = [nn.SELU(),nn.SELU(),nn.SELU(),nn.SELU()]
         # ================== Estimating actions ==================
     @property
     def policies(self):
@@ -125,7 +132,7 @@ class MADDPG(object):
                 noisy_actions.append(one_hot)
         return noisy_actions
     
-    def extract_pos(self,obs):
+    def extract_pos_speak(self,obs):
         '''
             Extract position observations and concatenate them
             Specific for game1
@@ -137,6 +144,23 @@ class MADDPG(object):
             mask.append(i*5+4)
         return obs[:][:,mask]
          
+    def extract_pos_tag(self,obs):
+        '''
+            Extract position observations and concatenate them
+            Specific for game1
+        '''
+        mask = []
+        length = int((obs.shape[1]-1)/20)
+        for i in range(length+1):
+            mask.append(i*20+2)
+            mask.append(i*20+3)
+            mask.append(i*20+8)
+            mask.append(i*20+9)
+            mask.append(i*20+10)
+            mask.append(i*20+11)
+            mask.append(i*20+12)
+            mask.append(i*20+13)
+        return obs[:][:,mask]
     
     def update(self, sample, agent_i, parallel=False, logger=None):
         """
@@ -171,9 +195,8 @@ class MADDPG(object):
             if self.noisy_sharing == True:
                 #noisy_all_trgt_acs = self.noisy_sharing_discrete(all_trgt_acs,agent_i)
                 #all_trgt_acs = noisy_all_trgt_acs
-                if agent_i == 0:
-                    noisy_acs = self.noisy_sharing_discrete(acs,agent_i)
-                    acs = noisy_acs
+                noisy_acs = self.noisy_sharing_discrete(acs,agent_i)
+                acs = noisy_acs
                 # print(self.noisy_SNR)
 
             # ==================End of Adding noise====================
@@ -190,7 +213,7 @@ class MADDPG(object):
                             # print(obs[agent_i].shape,pos_obs[agent_i].shape,neg_obs[agent_i].shape)
                             #print(self.est_ac)
                             concat_obs = torch.cat([obs[agent_i], pos_obs[agent_i], neg_obs[agent_i]],dim=1)
-                            norm_in = self.extract_pos(concat_obs)      # Only require position information
+                            norm_in = self.extract_pos_speak(concat_obs)      # Only require position information
                             lin_ac = self.est_ac_l1(norm_in)
                             hidden = self.est_hidden(lin_ac)
                             est_acs = self.out_ac_l1(hidden)
@@ -202,7 +225,17 @@ class MADDPG(object):
                     else:
                         pass
                 elif self.game_id == 'simple_tag':
-                    raise NotImplementedError
+                    for i, ac in enumerate(acs):
+                        if i==agent_i:
+                            continue
+                        print('@@@@@@@@@@@@')
+                        concat_obs = torch.cat([obs[agent_i], pos_obs[agent_i], neg_obs[agent_i]],dim=1)
+                        norm_in = self.extract_pos_tag(concat_obs)
+                        lin_ac = self.est_ac_l1(norm_in)
+                        hidden = self.est_hidden1(lin_ac)
+                        hidden2 = self.est_hidden2_list[i](hidden)
+                        est_acs = self.out_ac_list[i](hidden2)     
+                        acs[i] = gumbel_softmax(est_acs,hard=True)
                 else:
                     raise NotImplementedError
 
