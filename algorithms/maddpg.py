@@ -228,7 +228,7 @@ class MADDPG(object):
                     for i, ac in enumerate(acs):
                         if i==agent_i:
                             continue
-                        print('@@@@@@@@@@@@')
+
                         concat_obs = torch.cat([obs[agent_i], pos_obs[agent_i], neg_obs[agent_i]],dim=1)
                         norm_in = self.extract_pos_tag(concat_obs)
                         lin_ac = self.est_ac_l1(norm_in)
